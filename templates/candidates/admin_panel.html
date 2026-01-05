@@ -1,0 +1,106 @@
+{% extends "candidates/base.html" %}
+{% block title %}لوحة الإدارة{% endblock %}
+{% block content %}
+
+<div class="card" style="margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+    <div>
+      <div style="font-weight:800;">لوحة الإدارة</div>
+      <div class="muted">اختر لجنة لعرض اكتمال المقابلات بدقة (3/3) وحساب المتوسط والنهائي.</div>
+    </div>
+
+    <form method="get" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <select name="committee" style="width:auto;min-width:280px;">
+        <option value="">— كل اللجان —</option>
+        {% for cm in committees %}
+          <option value="{{ cm.id }}" {% if active_committee and active_committee.id == cm.id %}selected{% endif %}>
+            {{ cm.name }} — {{ cm.opportunity }}
+          </option>
+        {% endfor %}
+      </select>
+      <button class="btn primary" type="submit">تطبيق</button>
+      <a class="btn" href="{% url 'candidates:admin_panel' %}">إزالة</a>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>الاسم</th>
+        <th>السجل</th>
+        <th>الفرصة</th>
+        <th>ملف (50)</th>
+        <th>مقابلة (3/3)</th>
+        <th>متوسط المقابلة (50)</th>
+        <th>النهائي (100)</th>
+        <th>الحالة</th>
+        <th>اعتماد</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in candidates %}
+      <tr>
+        <td>{{ c.full_name }}</td>
+        <td>{{ c.national_id }}</td>
+        <td>{{ c.opportunity }}</td>
+
+        <td>
+          {% if c.file_score is not None %}
+            <span class="pill ok">{{ c.file_score }}</span>
+          {% else %}
+            <span class="pill warn">—</span>
+          {% endif %}
+        </td>
+
+        <td>{{ c.interviews_count }}/3</td>
+
+        <td>
+          {% if active_committee and c.interviews_count == 3 %}
+            <span class="pill ok">{{ c.interview_avg(active_committee)|floatformat:2 }}</span>
+          {% else %}
+            <span class="pill warn">—</span>
+          {% endif %}
+        </td>
+
+        <td>
+          {% if active_committee and c.file_score is not None and c.interviews_count == 3 %}
+            <span class="pill ok">{{ c.final_score(active_committee)|floatformat:2 }}</span>
+          {% else %}
+            <span class="pill warn">—</span>
+          {% endif %}
+        </td>
+
+        <td>
+          {% if c.is_finalized %}
+            <span class="pill ok">معتمد</span>
+          {% else %}
+            {% if c.file_score is None %}
+              <span class="pill bad">ناقص ملف</span>
+            {% elif c.interviews_count < 3 %}
+              <span class="pill warn">ناقص مقابلة</span>
+            {% else %}
+              <span class="pill ok">جاهز</span>
+            {% endif %}
+          {% endif %}
+        </td>
+
+        <td>
+          {% if not c.is_finalized and active_committee and c.file_score is not None and c.interviews_count == 3 %}
+            <a class="btn primary" href="{% url 'candidates:finalize_candidate' c.id active_committee.id %}">اعتماد</a>
+          {% elif not c.is_finalized and not active_committee %}
+            <span class="muted">اختر لجنة</span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="9" class="muted">لا يوجد بيانات.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

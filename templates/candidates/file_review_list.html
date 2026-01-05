@@ -1,0 +1,48 @@
+{% extends "candidates/base.html" %}
+{% block title %}تقييم الملفات{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+    <div>
+      <div style="font-weight:800;">قائمة المرشحين — تقييم الملف</div>
+      <div class="muted">ادخل درجة الملف من 50. بعد الاعتماد النهائي لن يمكن التعديل.</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>الاسم</th>
+        <th>السجل</th>
+        <th>الفرصة</th>
+        <th>المدرسة</th>
+        <th>القطاع</th>
+        <th>درجة الملف (50)</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in candidates %}
+      <tr>
+        <td>{{ c.full_name }}</td>
+        <td>{{ c.national_id }}</td>
+        <td>{{ c.opportunity }}</td>
+        <td>{{ c.school|default:"—" }}</td>
+        <td>{{ c.sector|default:"—" }}</td>
+        <td>
+          {% if c.file_score is not None %}
+            <span class="pill ok">{{ c.file_score }}</span>
+          {% else %}
+            <span class="pill warn">—</span>
+          {% endif %}
+          {% if c.is_finalized %}<span class="pill ok">معتمد</span>{% endif %}
+        </td>
+        <td><a class="btn" href="{% url 'candidates:file_review_detail' c.id %}">فتح</a></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" class="muted">لا يوجد مرشحون.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

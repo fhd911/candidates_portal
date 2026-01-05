@@ -1,0 +1,33 @@
+{% extends "candidates/base.html" %}
+{% block title %}تقييم المقابلة{% endblock %}
+{% block content %}
+<div class="card">
+  <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+    <div>
+      <div style="font-weight:800;font-size:14px;">{{ candidate.full_name }}</div>
+      <div class="muted">اللجنة: {{ committee.name }} — الفرصة: {{ committee.opportunity }}</div>
+    </div>
+    {% if candidate.is_finalized %}
+      <span class="pill ok">النتيجة معتمدة (مقفلة)</span>
+    {% else %}
+      <span class="pill warn">غير معتمد</span>
+    {% endif %}
+  </div>
+
+  <form method="post" style="margin-top:12px;">
+    {% csrf_token %}
+    <label class="muted">درجتك (0–50)</label>
+    <input type="number" name="score" min="0" max="50" step="0.01"
+           value="{{ score_obj.score|default_if_none:'' }}"
+           {% if candidate.is_finalized %}disabled{% endif %}>
+
+    <label class="muted" style="margin-top:10px;display:block;">ملاحظات (اختياري)</label>
+    <textarea name="notes" {% if candidate.is_finalized %}disabled{% endif %}>{{ score_obj.notes }}</textarea>
+
+    <div class="actions">
+      <button class="btn primary" type="submit" {% if candidate.is_finalized %}disabled{% endif %}>حفظ</button>
+      <a class="btn" href="{% url 'candidates:interview_list' %}">رجوع</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "candidates/base.html" %}
+{% block title %}تسجيل الدخول{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:520px;margin:0 auto;">
+  <div style="font-weight:800;margin-bottom:6px;">تسجيل الدخول</div>
+  <div class="muted" style="margin-bottom:12px;">أدخل بيانات الدخول الخاصة بك.</div>
+
+  <form method="post">
+    {% csrf_token %}
+    <div style="display:grid;gap:10px;">
+      {{ form.username.label_tag }}
+      {{ form.username }}
+
+      {{ form.password.label_tag }}
+      {{ form.password }}
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" type="submit">دخول</button>
+      <a class="btn" href="/admin/login/">دخول عبر الإدارة</a>
+    </div>
+
+    {% if form.errors %}
+      <div class="note" style="margin-top:10px;color:#ffc1c1;">
+        تأكد من اسم المستخدم وكلمة المرور.
+      </div>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "candidates/base.html" %}
+{% block title %}الرئيسية{% endblock %}
+{% block content %}
+<div class="grid">
+  <div class="col-12 card">
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div>
+        <div style="font-weight:800;font-size:14px;">مرحبًا 👋</div>
+        <div class="muted">اختر الواجهة حسب دورك (مُقيّم ملف / عضو لجنة / إدارة).</div>
+      </div>
+      <div class="pill">التقييم = ملف 50 + مقابلة 50 = 100</div>
+    </div>
+
+    <div class="actions">
+      <a class="btn primary" href="{% url 'candidates:file_review_list' %}">الدخول لتقييم الملفات</a>
+      <a class="btn primary" href="{% url 'candidates:interview_list' %}">الدخول للمقابلات</a>
+      <a class="btn primary" href="{% url 'candidates:admin_panel' %}">الدخول للوحة الإدارة</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

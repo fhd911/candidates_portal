@@ -1,0 +1,62 @@
+{% extends "candidates/base.html" %}
+{% block title %}تقييم الملف{% endblock %}
+{% block content %}
+
+<div class="grid">
+  <div class="col-12 card">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+      <div>
+        <div style="font-weight:800;font-size:14px;">{{ candidate.full_name }}</div>
+        <div class="muted">
+          السجل: {{ candidate.national_id }} • الفرصة: {{ candidate.opportunity }}
+        </div>
+      </div>
+      {% if candidate.is_finalized %}
+        <span class="pill ok">النتيجة معتمدة (مقفلة)</span>
+      {% else %}
+        <span class="pill warn">غير معتمد</span>
+      {% endif %}
+    </div>
+
+    <div class="grid" style="margin-top:12px;">
+      <div class="col-6">
+        <div class="muted">المدرسة</div>
+        <div style="font-weight:800;">{{ candidate.school|default:"—" }}</div>
+      </div>
+      <div class="col-6">
+        <div class="muted">القطاع</div>
+        <div style="font-weight:800;">{{ candidate.sector|default:"—" }}</div>
+      </div>
+
+      <div class="col-6">
+        <div class="muted">تاريخ المباشرة</div>
+        <div style="font-weight:800;">{{ candidate.start_date|default:"—" }}</div>
+      </div>
+      <div class="col-6">
+        <div class="muted">الرتبة</div>
+        <div style="font-weight:800;">{{ candidate.rank|default:"—" }}</div>
+      </div>
+    </div>
+
+    <hr style="border:0;border-top:1px solid var(--line);margin:14px 0;">
+
+    <form method="post">
+      {% csrf_token %}
+      <label class="muted">درجة الملف (0–50)</label>
+      <input type="number" name="file_score" min="0" max="50" step="0.01"
+             value="{{ candidate.file_score|default_if_none:'' }}"
+             {% if candidate.is_finalized %}disabled{% endif %}>
+
+      <div class="actions">
+        <button class="btn primary" type="submit" {% if candidate.is_finalized %}disabled{% endif %}>حفظ</button>
+        <a class="btn" href="{% url 'candidates:file_review_list' %}">رجوع</a>
+      </div>
+
+      {% if candidate.is_finalized %}
+      <div class="note">* تم اعتماد النتيجة، التعديل مقفل.</div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+{% endblock %}
