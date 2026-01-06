@@ -3,242 +3,517 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required, user_passes_test
-from django.db.models import Count, Q
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import login_required
+from django.contrib.admin.views.decorators import staff_member_required
+from django.db import transaction
+from django.db.models import Q, Count
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.views.decorators.http import require_http_methods
 
-from .models import Candidate, Committee, InterviewScore
-
-
-# ======================================================
-# Helpers (Groups)
-# ======================================================
-def is_file_reviewer(user) -> bool:
-    return user.is_authenticated and user.groups.filter(name="FileReviewers").exists()
+from .models import Candidate, Committee, FinalDecision, InterviewScore, MemberProfile, Opportunity
 
 
-def is_interviewer(user) -> bool:
-    return user.is_authenticated and user.groups.filter(name="Interviewers").exists()
+# ==========================================================
+# Helpers
+# ==========================================================
 
-
-def is_admin(user) -> bool:
-    return user.is_authenticated and (user.is_superuser or user.groups.filter(name="Admins").exists())
-
-
-def _to_decimal_0_50(value: str | None) -> Decimal | None:
-    """Parse score safely; return None if invalid/out of range."""
-    if value is None or value == "":
+def get_profile(request: HttpRequest) -> MemberProfile | None:
+    if not request.user.is_authenticated:
         return None
+    return getattr(request.user, "profile", None)
+
+
+def require_role(request: HttpRequest, roles: set[str]) -> MemberProfile | HttpResponse:
+    p = get_profile(request)
+    if not p or not p.is_active:
+        # ✅ مهم: نفصل الجلسة إن كانت موجودة لتجنب حلقات التحويل
+        if request.user.is_authenticated:
+            logout(request)
+        return redirect("candidates:login")
+    if p.role not in roles:
+        return redirect("candidates:home")
+    return p
+
+
+def get_active_opportunity_for_profile(p: MemberProfile) -> Opportunity | None:
+    if getattr(p, "opportunity_id", None):
+        return p.opportunity
+    return Opportunity.objects.filter(is_active=True).first()
+
+
+def parse_decimal_0_50(value: str) -> Decimal | None:
     try:
-        d = Decimal(value)
+        v = Decimal((value or "").strip())
     except (InvalidOperation, ValueError):
         return None
-    if d < 0 or d > 50:
+    if v < 0 or v > 50:
         return None
-    return d
+    return v
 
 
-# ======================================================
-# Dashboard
-# ======================================================
-@login_required
-def dashboard(request):
-    return render(request, "candidates/dashboard.html")
+def apply_search(qs, q: str):
+    """
+    بحث خفيف بدون JS.
+    إذا لا يوجد national_id في Candidate احذف شرط national_id.
+    """
+    q = (q or "").strip()
+    if not q:
+        return qs
+
+    cond = Q(full_name__icontains=q)
+
+    # اختياري إن كان موجوداً لديك في Candidate:
+    # cond |= Q(national_id__icontains=q)
+
+    return qs.filter(cond)
 
 
-# ======================================================
-# File Reviewer
-# ======================================================
-@login_required
-@user_passes_test(is_file_reviewer)
-def file_review_list(request):
-    qs = Candidate.objects.select_related("opportunity").order_by("full_name")
-    return render(request, "candidates/file_review_list.html", {"candidates": qs})
+# ==========================================================
+# Home (Auto Route by Role)
+# ==========================================================
+
+def home(request: HttpRequest) -> HttpResponse:
+    p = get_profile(request)
+    if not p or not getattr(p, "is_active", False):
+        if request.user.is_authenticated:
+            logout(request)
+        return redirect("candidates:login")
+
+    if p.role == MemberProfile.ROLE_SUPERVISOR:
+        return redirect("candidates:supervisor_dashboard")
+    if p.role in (MemberProfile.ROLE_MEMBER, MemberProfile.ROLE_CHAIR):
+        return redirect("candidates:committee_dashboard")
+    return redirect("candidates:admin_dashboard")
 
 
-@login_required
-@user_passes_test(is_file_reviewer)
-def file_review_detail(request, pk: int):
-    candidate = get_object_or_404(Candidate.objects.select_related("opportunity"), pk=pk)
+# ==========================================================
+# Auth (NO role selection)  ✅ Fix redirect loop
+# ==========================================================
+
+@require_http_methods(["GET", "POST"])
+def login_view(request: HttpRequest) -> HttpResponse:
+    # ✅ منع حلقة التحويل:
+    # إذا المستخدم مسجّل دخول لكن بدون Profile أو غير مفعّل → logout ثم عرض login
+    if request.user.is_authenticated:
+        p = getattr(request.user, "profile", None)
+        if p and getattr(p, "is_active", False):
+            return redirect("candidates:home")
+
+        logout(request)
+        messages.error(request, "حسابك غير مرتبط بملف صلاحيات أو غير مفعّل. راجع الإدارة.")
+        return redirect("candidates:login")
 
     if request.method == "POST":
-        if candidate.is_finalized:
-            messages.warning(request, "النتيجة معتمدة (مقفلة) ولا يمكن تعديل درجة الملف.")
-            return redirect("candidates:file_review_list")
+        national_id = (request.POST.get("national_id") or "").strip()
+        last4 = (request.POST.get("last4") or "").strip()
 
-        score = _to_decimal_0_50(request.POST.get("file_score"))
-        if score is None:
-            messages.error(request, "أدخل درجة صحيحة بين 0 و 50.")
-            return redirect("candidates:file_review_detail", pk=candidate.pk)
+        if not national_id or not last4:
+            messages.error(request, "أدخل السجل المدني وآخر 4 أرقام.")
+            return redirect("candidates:login")
 
-        candidate.file_score = score
-        candidate.file_reviewer = request.user
-        candidate.file_scored_at = timezone.now()
-        candidate.save(update_fields=["file_score", "file_reviewer", "file_scored_at"])
+        user = authenticate(request, national_id=national_id, last4=last4)
+        if not user:
+            messages.error(request, "بيانات الدخول غير صحيحة.")
+            return redirect("candidates:login")
 
-        messages.success(request, "تم حفظ درجة الملف.")
-        return redirect("candidates:file_review_list")
+        p = getattr(user, "profile", None)
+        if not p or not getattr(p, "is_active", False):
+            messages.error(request, "حسابك غير مفعّل. راجع الإدارة.")
+            return redirect("candidates:login")
 
-    return render(request, "candidates/file_review_detail.html", {"candidate": candidate})
+        login(request, user, backend="candidates.auth_backend.NationalIdLast4Backend")
+        return redirect("candidates:home")
+
+    return render(request, "candidates/login.html")
 
 
-# ======================================================
-# Interviewer
-# ======================================================
-@login_required
-@user_passes_test(is_interviewer)
-def interview_list(request):
-    committees = Committee.objects.select_related("opportunity").filter(is_open=True).order_by("-id")
-    candidates = Candidate.objects.select_related("opportunity").order_by("full_name")
-    return render(
-        request,
-        "candidates/interview_list.html",
-        {"committees": committees, "candidates": candidates},
-    )
+def logout_view(request: HttpRequest) -> HttpResponse:
+    logout(request)
+    return redirect("candidates:login")
 
+
+# ==========================================================
+# Supervisor
+# ==========================================================
 
 @login_required
-@user_passes_test(is_interviewer)
-def interview_score(request, candidate_id: int, committee_id: int):
-    candidate = get_object_or_404(Candidate.objects.select_related("opportunity"), pk=candidate_id)
-    committee = get_object_or_404(Committee.objects.select_related("opportunity"), pk=committee_id)
+def supervisor_dashboard(request: HttpRequest) -> HttpResponse:
+    p = require_role(request, {MemberProfile.ROLE_SUPERVISOR})
+    if isinstance(p, HttpResponse):
+        return p
 
-    # ✅ حماية: لا يمكن تقييم مرشح خارج نفس الفرصة
-    if candidate.opportunity_id != committee.opportunity_id:
-        messages.error(request, "لا يمكن تقييم هذا المرشح ضمن هذه اللجنة (اختلاف الفرصة).")
-        return redirect("candidates:interview_list")
+    if not p.opportunity_id:
+        messages.error(request, "لم يتم ربط المشرف بفرصة. راجع الإدارة.")
+        return redirect("candidates:login")
 
-    score_obj, _ = InterviewScore.objects.get_or_create(
-        candidate=candidate,
-        committee=committee,
-        member=request.user,
-        defaults={"score": Decimal("0.00")},
-    )
+    opp = p.opportunity
+    qs = Candidate.objects.filter(opportunity=opp).order_by("full_name")
 
-    if request.method == "POST":
-        if candidate.is_finalized:
-            messages.warning(request, "النتيجة معتمدة (مقفلة) ولا يمكن تعديل درجة المقابلة.")
-            return redirect("candidates:interview_list")
+    q = (request.GET.get("q") or "").strip()
+    qs = apply_search(qs, q)
 
-        score = _to_decimal_0_50(request.POST.get("score"))
-        if score is None:
-            messages.error(request, "أدخل درجة صحيحة بين 0 و 50.")
-            return redirect("candidates:interview_score", candidate_id=candidate.pk, committee_id=committee.pk)
+    pending = qs.filter(file_score__isnull=True, file_not_eligible=False)
+    done = qs.filter(Q(file_score__isnull=False) | Q(file_not_eligible=True))
 
-        notes = (request.POST.get("notes") or "").strip()
-        score_obj.score = score
-        score_obj.notes = notes
-        score_obj.save(update_fields=["score", "notes"])
-
-        messages.success(request, "تم حفظ درجتك للمقابلة.")
-        return redirect("candidates:interview_list")
+    stats = {
+        "total": qs.count(),
+        "pending": pending.count(),
+        "done": done.count(),
+        "assigned": qs.filter(assigned_committee__isnull=False).count(),
+    }
 
     return render(
         request,
-        "candidates/interview_score.html",
-        {"candidate": candidate, "committee": committee, "score_obj": score_obj},
+        "candidates/supervisor_dashboard.html",
+        {"opportunity": opp, "pending": pending, "done": done, "stats": stats, "q": q},
     )
 
 
-# ======================================================
-# Admin Panel
-# ======================================================
+# ==========================================================
+# File Scoring (Unified) — Supervisor + Chair
+# ==========================================================
+
 @login_required
-@user_passes_test(is_admin)
-def admin_panel(request):
+@require_http_methods(["GET", "POST"])
+def file_score_view(request: HttpRequest, pk: int) -> HttpResponse:
     """
-    يعرض المرشحين + اكتمال المقابلة + حساب متوسط المقابلة والنهائي.
-    ملاحظة: الاعتماد النهائي سيتم عبر finalize_candidate_auto أو finalize_candidate.
+    تقييم الملف (موحّد):
+    - المشرف: يقيّم مرشح ضمن فرصته.
+    - رئيس اللجنة: يقيّم فقط مرشح ضمن لجنته (assigned_committee = لجنته).
     """
-    committees = Committee.objects.select_related("opportunity").all().order_by("-is_open", "-id")
+    p = require_role(request, {MemberProfile.ROLE_SUPERVISOR, MemberProfile.ROLE_CHAIR})
+    if isinstance(p, HttpResponse):
+        return p
 
-    # نسمح بتحديد لجنة لعرض المقابلات بدقة (مهم للحساب)
-    committee_id = request.GET.get("committee")
-    active_committee = None
-    if committee_id and committee_id.isdigit():
-        active_committee = Committee.objects.select_related("opportunity").filter(pk=int(committee_id)).first()
+    if p.role == MemberProfile.ROLE_SUPERVISOR:
+        if not p.opportunity_id:
+            messages.error(request, "لم يتم ربط المشرف بفرصة. راجع الإدارة.")
+            return redirect("candidates:login")
 
-    qs = Candidate.objects.select_related("opportunity").order_by("-is_finalized", "full_name")
-
-    # عدّ المقابلات (إما للجنة محددة أو أي لجنة لنفس الفرصة)
-    if active_committee:
-        qs = qs.annotate(
-            interviews_count=Count(
-                "interview_scores",
-                filter=Q(interview_scores__committee=active_committee),
-            )
-        )
+        cand = get_object_or_404(Candidate, pk=pk, opportunity=p.opportunity)
+        back_url = "candidates:supervisor_dashboard"
     else:
-        qs = qs.annotate(interviews_count=Count("interview_scores"))
+        if not p.committee_id:
+            messages.error(request, "لم يتم ربط حسابك بلجنة. راجع الإدارة.")
+            return redirect("candidates:login")
 
-    # حساب المتوسط/النهائي داخل القالب عبر helpers بسيطة (نمرر committee لو موجود)
+        cand = get_object_or_404(Candidate, pk=pk, assigned_committee=p.committee)
+        back_url = "candidates:committee_dashboard"
+
+    if cand.is_finalized:
+        messages.error(request, "تم اعتماد هذا المرشح نهائياً ولا يمكن تعديله.")
+        return redirect(back_url)
+
+    if request.method == "POST":
+        action = (request.POST.get("action") or "").strip()
+
+        with transaction.atomic():
+            cand = Candidate.objects.select_for_update().get(pk=cand.pk)
+
+            if cand.is_finalized:
+                messages.error(request, "تم اعتماد هذا المرشح نهائياً ولا يمكن تعديله.")
+                return redirect(back_url)
+
+            if action == "not_eligible":
+                reason = (request.POST.get("reason") or "").strip()
+                cand.file_not_eligible = True
+                cand.file_not_eligible_reason = reason
+                cand.file_score = None
+            else:
+                v = parse_decimal_0_50(request.POST.get("score") or "")
+                if v is None:
+                    messages.error(request, "أدخل درجة صحيحة بين 0 و 50.")
+                    return redirect("candidates:file_score", pk=cand.pk)
+
+                cand.file_score = v
+                cand.file_not_eligible = False
+                cand.file_not_eligible_reason = ""
+
+            cand.file_reviewer = request.user
+            cand.file_scored_at = timezone.now()
+            cand.save()
+
+        messages.success(request, "تم حفظ تقييم الملف.")
+        return redirect(back_url)
+
+    return render(request, "candidates/file_score.html", {"c": cand, "back_url": back_url})
+
+
+# ==========================================================
+# Admin
+# ==========================================================
+
+@login_required
+def admin_dashboard(request: HttpRequest) -> HttpResponse:
+    p = require_role(request, {MemberProfile.ROLE_ADMIN})
+    if isinstance(p, HttpResponse):
+        return p
+
+    opp = get_active_opportunity_for_profile(p)
+    if not opp:
+        messages.error(request, "لا توجد فرصة فعّالة.")
+        return redirect("candidates:login")
+
+    qs = Candidate.objects.filter(opportunity=opp)
+    total = qs.count()
+    ready = qs.filter(Q(file_score__isnull=False) | Q(file_not_eligible=True)).count()
+    assigned = qs.filter(assigned_committee__isnull=False).count()
+    finalized = qs.filter(is_finalized=True).count()
+
+    committees = Committee.objects.filter(opportunity=opp).order_by("name")
+    committee_counts = (
+        qs.filter(assigned_committee__isnull=False)
+        .values("assigned_committee__name")
+        .annotate(c=Count("id"))
+        .order_by("assigned_committee__name")
+    )
+
     return render(
         request,
-        "candidates/admin_panel.html",
+        "candidates/admin_dashboard.html",
         {
-            "candidates": qs,
+            "opportunity": opp,
+            "total": total,
+            "ready": ready,
+            "assigned": assigned,
+            "finalized": finalized,
             "committees": committees,
-            "active_committee": active_committee,
+            "committee_counts": committee_counts,
+        },
+    )
+
+
+@staff_member_required
+@require_http_methods(["GET", "POST"])
+def distribution_view(request: HttpRequest) -> HttpResponse:
+    opp = Opportunity.objects.filter(is_active=True).first()
+    if not opp:
+        messages.error(request, "لا توجد فرصة فعّالة.")
+        return redirect("candidates:admin_dashboard")
+
+    committees = Committee.objects.filter(opportunity=opp, is_open=True).order_by("name")
+
+    ready_unassigned = (
+        Candidate.objects.filter(opportunity=opp)
+        .filter(Q(file_score__isnull=False) | Q(file_not_eligible=True))
+        .filter(assigned_committee__isnull=True)
+        .order_by("full_name")
+    )
+
+    q = (request.GET.get("q") or "").strip()
+    ready_unassigned = apply_search(ready_unassigned, q)
+
+    if request.method == "POST":
+        try:
+            cand_id = int(request.POST.get("candidate_id") or 0)
+            committee_id = int(request.POST.get("committee_id") or 0)
+        except ValueError:
+            messages.error(request, "مدخلات غير صحيحة.")
+            return redirect("candidates:distribution")
+
+        if cand_id <= 0 or committee_id <= 0:
+            messages.error(request, "اختر مرشحًا ولجنة.")
+            return redirect("candidates:distribution")
+
+        with transaction.atomic():
+            cand = Candidate.objects.select_for_update().filter(pk=cand_id, opportunity=opp).first()
+            com = Committee.objects.filter(pk=committee_id, opportunity=opp, is_open=True).first()
+
+            if not cand:
+                messages.error(request, "المرشح غير موجود.")
+                return redirect("candidates:distribution")
+            if not com:
+                messages.error(request, "اللجنة غير موجودة أو غير مفتوحة.")
+                return redirect("candidates:distribution")
+
+            if cand.file_score is None and not cand.file_not_eligible:
+                messages.error(request, "هذا المرشح غير جاهز للتوزيع بعد.")
+                return redirect("candidates:distribution")
+
+            if cand.assigned_committee_id:
+                messages.info(request, "تم توزيع هذا المرشح مسبقاً.")
+                return redirect("candidates:distribution")
+
+            cand.assigned_committee = com
+            cand.save(update_fields=["assigned_committee"])
+
+        messages.success(request, "تم توزيع المرشح على اللجنة.")
+        return redirect("candidates:distribution")
+
+    return render(
+        request,
+        "candidates/distribution.html",
+        {"opportunity": opp, "committees": committees, "ready": ready_unassigned, "q": q},
+    )
+
+
+# ==========================================================
+# Committee
+# ==========================================================
+
+@login_required
+def committee_dashboard(request: HttpRequest) -> HttpResponse:
+    p = require_role(request, {MemberProfile.ROLE_MEMBER, MemberProfile.ROLE_CHAIR})
+    if isinstance(p, HttpResponse):
+        return p
+
+    if not p.committee_id:
+        messages.error(request, "لم يتم ربط حسابك بلجنة. راجع الإدارة.")
+        return redirect("candidates:login")
+
+    com = p.committee
+    qs = Candidate.objects.filter(assigned_committee=com).order_by("full_name")
+
+    q = (request.GET.get("q") or "").strip()
+    qs = apply_search(qs, q)
+
+    scored_ids = set(
+        InterviewScore.objects.filter(committee=com, member=request.user).values_list("candidate_id", flat=True)
+    )
+
+    tasks = None
+    if p.role == MemberProfile.ROLE_CHAIR:
+        tasks = {
+            "pending_file": qs.filter(file_score__isnull=True, file_not_eligible=False).count(),
+            "pending_interview": qs.exclude(id__in=scored_ids).filter(is_finalized=False).count(),
+            "pending_finalize": qs.filter(is_finalized=False).count(),
+        }
+
+    return render(
+        request,
+        "candidates/committee_dashboard.html",
+        {
+            "committee": com,
+            "candidates": qs,
+            "scored_ids": scored_ids,
+            "is_chair": p.role == MemberProfile.ROLE_CHAIR,
+            "q": q,
+            "tasks": tasks,
         },
     )
 
 
 @login_required
-@user_passes_test(is_admin)
-def finalize_candidate_auto(request, pk: int):
-    """
-    اعتماد تلقائي: يختار لجنة مرتبطة بفرصة المرشح (الأحدث/المفتوحة أولاً).
-    """
-    candidate = get_object_or_404(Candidate.objects.select_related("opportunity"), pk=pk)
+@require_http_methods(["GET", "POST"])
+def committee_score(request: HttpRequest, pk: int) -> HttpResponse:
+    p = require_role(request, {MemberProfile.ROLE_MEMBER, MemberProfile.ROLE_CHAIR})
+    if isinstance(p, HttpResponse):
+        return p
 
-    committee = (
-        Committee.objects
-        .filter(opportunity=candidate.opportunity)
-        .order_by("-is_open", "-id")
-        .first()
-    )
-    if not committee:
-        messages.error(request, "لا توجد لجنة مرتبطة بهذه الفرصة لاعتماد النتيجة.")
-        return redirect("candidates:admin_panel")
+    com = p.committee
+    if not com:
+        messages.error(request, "لم يتم ربط حسابك بلجنة.")
+        return redirect("candidates:login")
 
-    return _finalize(candidate=candidate, committee=committee, request=request)
+    cand = get_object_or_404(Candidate, pk=pk, assigned_committee=com)
+
+    if cand.is_finalized:
+        messages.error(request, "تم اعتماد المرشح نهائياً.")
+        return redirect("candidates:committee_dashboard")
+
+    my_score = InterviewScore.objects.filter(committee=com, candidate=cand, member=request.user).first()
+
+    if request.method == "POST":
+        v = parse_decimal_0_50(request.POST.get("score") or "")
+        notes = (request.POST.get("notes") or "").strip()
+
+        if v is None:
+            messages.error(request, "أدخل درجة صحيحة بين 0 و 50.")
+            return redirect("candidates:committee_score", pk=cand.pk)
+
+        with transaction.atomic():
+            cand = Candidate.objects.select_for_update().get(pk=cand.pk)
+            if cand.is_finalized:
+                messages.error(request, "تم اعتماد المرشح نهائياً.")
+                return redirect("candidates:committee_dashboard")
+
+            InterviewScore.objects.update_or_create(
+                committee=com,
+                candidate=cand,
+                member=request.user,
+                defaults={"score": v, "notes": notes},
+            )
+
+        messages.success(request, "تم حفظ درجة المقابلة.")
+        return redirect("candidates:committee_dashboard")
+
+    return render(request, "candidates/committee_score.html", {"c": cand, "committee": com, "my_score": my_score})
 
 
 @login_required
-@user_passes_test(is_admin)
-def finalize_candidate(request, pk: int, committee_id: int):
+@require_http_methods(["GET", "POST"])
+def chair_finalize(request: HttpRequest, pk: int) -> HttpResponse:
+    p = require_role(request, {MemberProfile.ROLE_CHAIR})
+    if isinstance(p, HttpResponse):
+        return p
+
+    com = p.committee
+    if not com:
+        messages.error(request, "لم يتم ربط حسابك بلجنة.")
+        return redirect("candidates:login")
+
+    cand = get_object_or_404(Candidate, pk=pk, assigned_committee=com)
+
+    scores = list(
+        InterviewScore.objects.filter(committee=com, candidate=cand)
+        .select_related("member")
+        .order_by("created_at")
+    )
+
+    avg = Decimal(str(cand.interview_avg(com)))
+    total = Decimal(str(cand.final_score(com)))
+
+    prev = FinalDecision.objects.filter(committee=com, candidate=cand).first()
+
+    if request.method == "POST":
+        nominated = (request.POST.get("is_nominated") or "") == "1"
+        reason = (request.POST.get("reason") or "").strip()
+
+        with transaction.atomic():
+            cand = Candidate.objects.select_for_update().get(pk=cand.pk)
+            if cand.is_finalized:
+                messages.info(request, "تم اعتماد المرشح مسبقاً.")
+                return redirect("candidates:committee_dashboard")
+
+            FinalDecision.objects.update_or_create(
+                committee=com,
+                candidate=cand,
+                defaults={
+                    "is_nominated": nominated,
+                    "reason": reason,
+                    "final_score_value": total,
+                    "submitted_by": request.user,
+                },
+            )
+
+            cand.is_finalized = True
+            cand.finalized_by = request.user
+            cand.finalized_at = timezone.now()
+            cand.save(update_fields=["is_finalized", "finalized_by", "finalized_at"])
+
+        messages.success(request, "تم اعتماد النتيجة وإرسالها للإدارة.")
+        return redirect("candidates:committee_dashboard")
+
+    return render(
+        request,
+        "candidates/chair_finalize.html",
+        {"c": cand, "committee": com, "scores": scores, "avg": avg, "total": total, "prev": prev},
+    )
+
+
+# ==========================================================
+# Backward compatibility (optional)
+# ==========================================================
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def supervisor_file_score(request: HttpRequest, pk: int) -> HttpResponse:
     """
-    اعتماد يدوي: يعتمد المرشح بناءً على لجنة محددة.
+    توافق خلفي للمسار القديم:
+    /supervisor/candidate/<pk>/
+    يحوّله للتقييم الموحد file_score_view
     """
-    candidate = get_object_or_404(Candidate.objects.select_related("opportunity"), pk=pk)
-    committee = get_object_or_404(Committee.objects.select_related("opportunity"), pk=committee_id)
-    return _finalize(candidate=candidate, committee=committee, request=request)
-
-
-def _finalize(*, candidate: Candidate, committee: Committee, request):
-    # حماية: نفس الفرصة
-    if candidate.opportunity_id != committee.opportunity_id:
-        messages.error(request, "لا يمكن اعتماد النتيجة (اختلاف الفرصة بين المرشح واللجنة).")
-        return redirect("candidates:admin_panel")
-
-    if candidate.is_finalized:
-        messages.info(request, "النتيجة معتمدة مسبقًا.")
-        return redirect("candidates:admin_panel")
-
-    if candidate.file_score is None:
-        messages.error(request, "لا يمكن الاعتماد: درجة الملف غير مدخلة.")
-        return redirect("candidates:admin_panel")
-
-    cnt = candidate.interview_scores.filter(committee=committee).count()
-    if cnt != 3:
-        messages.error(request, f"لا يمكن الاعتماد: المقابلة غير مكتملة (الموجود {cnt}/3).")
-        return redirect("candidates:admin_panel")
-
-    candidate.is_finalized = True
-    candidate.finalized_by = request.user
-    candidate.finalized_at = timezone.now()
-    candidate.save(update_fields=["is_finalized", "finalized_by", "finalized_at"])
-
-    messages.success(request, "تم اعتماد النتيجة بنجاح.")
-    return redirect("candidates:admin_panel")
+    return file_score_view(request, pk)

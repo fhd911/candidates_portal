@@ -1,0 +1,89 @@
+{% extends "candidates/base.html" %}
+{% block title %}لوحة المشرف{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="hgroup">
+      <h1 class="h1">لوحة المشرف</h1>
+      <p class="sub">الفرصة: <b>{{ opportunity.name }}</b></p>
+    </div>
+    <div class="chips">
+      <span class="chip">الإجمالي: {{ stats.total }}</span>
+      <span class="chip chip-warn">بانتظار تقييم: {{ stats.pending }}</span>
+      <span class="chip chip-ok">مكتمل: {{ stats.done }}</span>
+      <span class="chip">موزّع للجنة: {{ stats.assigned }}</span>
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:12px;">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">بانتظار تقييم الملف</div>
+        <div class="panel-sub">مرشحون لم يتم إدخال درجة لهم ولم يتم استبعادهم.</div>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>الاسم</th>
+              <th>حالة</th>
+              <th style="width:140px;">إجراء</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for c in pending %}
+            <tr>
+              <td class="td-strong">{{ c.full_name }}</td>
+              <td><span class="badge badge-warn">بانتظار</span></td>
+              <td>
+                <a class="btn btn-sm btn-primary" href="{% url 'candidates:supervisor_file_score' c.pk %}">تقييم</a>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="3" class="td-empty">لا يوجد.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">تم التقييم / غير مؤهل</div>
+        <div class="panel-sub">قائمة المرشحين الذين اكتمل تقييمهم في هذه المرحلة.</div>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>الاسم</th>
+              <th>الملف</th>
+              <th>اللجنة</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for c in done %}
+            <tr>
+              <td class="td-strong">{{ c.full_name }}</td>
+              <td>
+                {% if c.file_not_eligible %}
+                  <span class="badge badge-danger">غير مؤهل</span>
+                {% else %}
+                  <span class="badge badge-ok">{{ c.file_score }}</span>
+                {% endif %}
+              </td>
+              <td class="muted">
+                {% if c.assigned_committee %}{{ c.assigned_committee.name }}{% else %}-{% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="3" class="td-empty">لا يوجد.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

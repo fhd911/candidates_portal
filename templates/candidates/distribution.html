@@ -1,0 +1,90 @@
+{% extends "candidates/base.html" %}
+{% block title %}توزيع المرشحين{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="hgroup">
+      <h1 class="h1">توزيع المرشحين على اللجان</h1>
+      <p class="sub">الفرصة: <b>{{ opportunity.name }}</b></p>
+    </div>
+    <div class="topbar-actions">
+      <a class="btn btn-ghost" href="{% url 'candidates:admin_dashboard' %}">رجوع للوحة الإدارة</a>
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:12px;">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">توزيع سريع</div>
+        <div class="panel-sub">اختر مرشحاً جاهزاً ثم اختر لجنة مفتوحة.</div>
+      </div>
+
+      <form method="post" class="form">
+        {% csrf_token %}
+
+        <div class="field">
+          <label class="label">المرشح (جاهز وغير موزّع)</label>
+          <select class="select" name="candidate_id" required>
+            <option value="">— اختر —</option>
+            {% for c in ready %}
+              <option value="{{ c.id }}">{{ c.full_name }}</option>
+            {% endfor %}
+          </select>
+          <div class="hint">القائمة تعرض فقط الجاهزين وغير الموزعين.</div>
+        </div>
+
+        <div class="field">
+          <label class="label">اللجنة</label>
+          <select class="select" name="committee_id" required>
+            <option value="">— اختر —</option>
+            {% for com in committees %}
+              <option value="{{ com.id }}">{{ com.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="hint">تظهر فقط اللجان المفتوحة.</div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary" type="submit">توزيع</button>
+          <a class="btn btn-ghost" href="{% url 'candidates:admin_dashboard' %}">إلغاء</a>
+        </div>
+      </form>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">قائمة الجاهزين غير الموزعين</div>
+        <div class="panel-sub">لمراجعة سريعة قبل التوزيع.</div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>الاسم</th>
+              <th style="width:140px;">حالة الملف</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in ready %}
+              <tr>
+                <td class="td-strong">{{ c.full_name }}</td>
+                <td>
+                  {% if c.file_not_eligible %}
+                    <span class="badge badge-danger">غير مؤهل</span>
+                  {% else %}
+                    <span class="badge badge-ok">{{ c.file_score }}</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="2" class="td-empty">لا يوجد مرشحون جاهزون للتوزيع.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

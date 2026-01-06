@@ -1,0 +1,48 @@
+{% extends "candidates/base.html" %}
+{% block title %}تسجيل الدخول{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <div class="card-head">
+      <div class="hgroup">
+        <h1 class="h1">تسجيل الدخول</h1>
+        <p class="sub">أدخل السجل المدني وآخر 4 أرقام — وسيتم توجيهك تلقائياً حسب صلاحيتك.</p>
+      </div>
+      <span class="chip chip-glow">آمن • عربي • إداري</span>
+    </div>
+
+    <form method="post" class="form">
+      {% csrf_token %}
+
+      <div class="grid grid-2">
+        <div class="field">
+          <label class="label">السجل المدني</label>
+          <input class="input" name="national_id" inputmode="numeric" autocomplete="off"
+                 placeholder="مثال: 10xxxxxxxx" required>
+          <div class="hint">بدون مسافات.</div>
+        </div>
+
+        <div class="field">
+          <label class="label">آخر 4 أرقام</label>
+          <input class="input" name="last4" inputmode="numeric" maxlength="4" autocomplete="off"
+                 placeholder="0000" required>
+          <div class="hint">لا يتم حفظها في الواجهة.</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" type="submit">دخول</button>
+        <a class="btn btn-ghost" href="{% url 'candidates:home' %}">عودة</a>
+      </div>
+
+      <div class="note" style="margin-top:10px;">
+        <div class="note-title">تنبيه</div>
+        <div class="note-text">
+          الدخول للتقييم إجراء تنظيمي ولا يعني ترشيحاً نهائياً — القرار النهائي لدى الإدارة.
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

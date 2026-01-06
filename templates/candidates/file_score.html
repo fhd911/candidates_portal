@@ -1,0 +1,68 @@
+{% extends "candidates/base.html" %}
+{% block title %}تقييم الملف{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="hgroup">
+      <h1 class="h1">تقييم الملف</h1>
+      <p class="sub">مرشح: <b>{{ c.full_name }}</b></p>
+    </div>
+    <div class="chips">
+      {% if c.file_scored_at %}
+        <span class="chip">آخر تحديث: {{ c.file_scored_at|date:"Y-m-d H:i" }}</span>
+      {% endif %}
+      {% if c.is_finalized %}
+        <span class="chip chip-danger">مُعتمد نهائياً</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:12px;">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">إدخال درجة</div>
+        <div class="panel-sub">الدرجة من 0 إلى 50</div>
+      </div>
+
+      <form method="post" class="form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="score">
+
+        <div class="field">
+          <label class="label">درجة الملف</label>
+          <input class="input" name="score" inputmode="decimal" placeholder="مثال: 42.5"
+                 value="{% if c.file_score %}{{ c.file_score }}{% endif %}">
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary" type="submit">حفظ</button>
+          <a class="btn btn-ghost" href="{% url back_url %}">رجوع</a>
+        </div>
+      </form>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">غير مؤهل</div>
+        <div class="panel-sub">استبعاد المرشح مع سبب.</div>
+      </div>
+
+      <form method="post" class="form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="not_eligible">
+
+        <div class="field">
+          <label class="label">سبب عدم الأهلية</label>
+          <textarea class="textarea" name="reason" placeholder="اكتب السبب باختصار...">{% if c.file_not_eligible_reason %}{{ c.file_not_eligible_reason }}{% endif %}</textarea>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-danger" type="submit">حفظ كغير مؤهل</button>
+          <a class="btn btn-ghost" href="{% url back_url %}">رجوع</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

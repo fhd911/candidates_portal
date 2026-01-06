@@ -1,0 +1,106 @@
+{% extends "candidates/base.html" %}
+{% block title %}اعتماد النتيجة{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="hgroup">
+      <h1 class="h1">اعتماد النتيجة (رئيس اللجنة)</h1>
+      <p class="sub">مرشح: <b>{{ c.full_name }}</b> — لجنة: <b>{{ committee.name }}</b></p>
+    </div>
+    <div class="chips">
+      <span class="chip">متوسط المقابلة: {{ avg }}</span>
+      <span class="chip chip-glow">المجموع النهائي: {{ total }}</span>
+      {% if c.is_finalized %}
+        <span class="chip chip-danger">مُعتمد</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:12px;">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">درجات الأعضاء</div>
+        <div class="panel-sub">عرض إدخالات جميع الأعضاء لهذه اللجنة.</div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>العضو</th>
+              <th style="width:120px;">الدرجة</th>
+              <th>ملاحظات</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in scores %}
+              <tr>
+                <td class="td-strong">
+                  {% if s.member.profile %}{{ s.member.profile.full_name|default:s.member.username }}{% else %}{{ s.member.username }}{% endif %}
+                </td>
+                <td><span class="badge badge-ok">{{ s.score }}</span></td>
+                <td class="muted">{{ s.notes|default:"-" }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="3" class="td-empty">لا توجد درجات مسجلة بعد.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if prev %}
+      <div class="note" style="margin-top:10px;">
+        <div class="note-title">قرار سابق</div>
+        <div class="note-text">
+          الحالة: <b>{% if prev.is_nominated %}مرشّح{% else %}غير مرشّح{% endif %}</b>
+          — السبب: {{ prev.reason|default:"-" }}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">القرار النهائي</div>
+        <div class="panel-sub">بعد الاعتماد لا يمكن تعديل المرشح.</div>
+      </div>
+
+      <form method="post" class="form">
+        {% csrf_token %}
+
+        <div class="field">
+          <label class="label">هل يتم ترشيحه؟</label>
+          <div class="seg">
+            <label class="seg-item">
+              <input type="radio" name="is_nominated" value="1" required
+                {% if prev and prev.is_nominated %}checked{% endif %}>
+              <span>مرشّح</span>
+            </label>
+            <label class="seg-item">
+              <input type="radio" name="is_nominated" value="0" required
+                {% if prev and not prev.is_nominated %}checked{% endif %}>
+              <span>غير مرشّح</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label">السبب / الملاحظة</label>
+          <textarea class="textarea" name="reason" placeholder="سبب مختصر...">{% if prev %}{{ prev.reason }}{% endif %}</textarea>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary" type="submit">اعتماد وإرسال للإدارة</button>
+          <a class="btn btn-ghost" href="{% url 'candidates:committee_dashboard' %}">رجوع</a>
+        </div>
+
+        <div class="note" style="margin-top:10px;">
+          <div class="note-title">تنبيه</div>
+          <div class="note-text">هذا الاعتماد نهائي ويقوم بتثبيت حالة المرشح وإرسالها للإدارة.</div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

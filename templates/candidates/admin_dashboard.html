@@ -1,0 +1,104 @@
+{% extends "candidates/base.html" %}
+{% block title %}لوحة الإدارة{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="hgroup">
+      <h1 class="h1">لوحة الإدارة</h1>
+      <p class="sub">الفرصة: <b>{{ opportunity.name }}</b></p>
+    </div>
+    <div class="topbar-actions">
+      <a class="btn btn-primary" href="{% url 'candidates:distribution' %}">توزيع المرشحين على اللجان</a>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi">
+      <div class="kpi-label">الإجمالي</div>
+      <div class="kpi-val">{{ total }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">جاهز للتوزيع</div>
+      <div class="kpi-val">{{ ready }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">تم التوزيع</div>
+      <div class="kpi-val">{{ assigned }}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">مُعتمد نهائياً</div>
+      <div class="kpi-val">{{ finalized }}</div>
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:12px;">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">اللجان</div>
+        <div class="panel-sub">اللجان المرتبطة بالفرصة.</div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>اللجنة</th>
+              <th style="width:120px;">الحالة</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for com in committees %}
+              <tr>
+                <td class="td-strong">{{ com.name }}</td>
+                <td>
+                  {% if com.is_open %}
+                    <span class="badge badge-ok">مفتوحة</span>
+                  {% else %}
+                    <span class="badge badge-warn">مغلقة</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="2" class="td-empty">لا يوجد لجان.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">توزيع المرشحين حسب اللجنة</div>
+        <div class="panel-sub">عدد المرشحين الموزعين على كل لجنة.</div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>اللجنة</th>
+              <th style="width:120px;">العدد</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in committee_counts %}
+              <tr>
+                <td class="td-strong">{{ row.assigned_committee__name }}</td>
+                <td><span class="badge">{{ row.c }}</span></td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="2" class="td-empty">لا يوجد توزيع حتى الآن.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note" style="margin-top:10px;">
+        <div class="note-title">معلومة</div>
+        <div class="note-text">المرشح يصبح “جاهز للتوزيع” بعد تقييم الملف أو تسجيله كغير مؤهل.</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

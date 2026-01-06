@@ -1,0 +1,70 @@
+{% extends "candidates/base.html" %}
+{% block title %}تقييم المقابلة{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="hgroup">
+      <h1 class="h1">تقييم المقابلة</h1>
+      <p class="sub">مرشح: <b>{{ c.full_name }}</b> — لجنة: <b>{{ committee.name }}</b></p>
+    </div>
+    <div class="chips">
+      {% if c.is_finalized %}
+        <span class="chip chip-danger">مُعتمد نهائياً</span>
+      {% endif %}
+      {% if my_score %}
+        <span class="chip">درجتي السابقة: {{ my_score.score }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:12px;">
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">إدخال الدرجة</div>
+        <div class="panel-sub">الدرجة من 0 إلى 50</div>
+      </div>
+
+      <form method="post" class="form">
+        {% csrf_token %}
+
+        <div class="field">
+          <label class="label">الدرجة</label>
+          <input class="input" name="score" inputmode="decimal" placeholder="مثال: 45"
+                 value="{% if my_score %}{{ my_score.score }}{% endif %}" required>
+        </div>
+
+        <div class="field">
+          <label class="label">ملاحظات (اختياري)</label>
+          <textarea class="textarea" name="notes" placeholder="ملاحظة مختصرة...">{% if my_score %}{{ my_score.notes }}{% endif %}</textarea>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary" type="submit">حفظ</button>
+          <a class="btn btn-ghost" href="{% url 'candidates:committee_dashboard' %}">رجوع</a>
+        </div>
+      </form>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">إرشادات</div>
+        <div class="panel-sub">لضمان توحيد التقييم بين الأعضاء.</div>
+      </div>
+
+      <div class="bullets">
+        <div class="bullet"><span class="dot"></span>أدخل درجة عادلة بناءً على عناصر المقابلة المعتمدة.</div>
+        <div class="bullet"><span class="dot"></span>الملاحظات مختصرة وواضحة وتُستخدم داخلياً فقط.</div>
+        <div class="bullet"><span class="dot"></span>لا يمكن تعديل المرشح بعد اعتماد رئيس اللجنة.</div>
+      </div>
+
+      {% if my_score %}
+      <div class="note" style="margin-top:10px;">
+        <div class="note-title">آخر إدخال</div>
+        <div class="note-text">يمكنك تحديث درجتك في أي وقت قبل الاعتماد النهائي.</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

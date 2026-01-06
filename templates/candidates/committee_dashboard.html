@@ -1,0 +1,139 @@
+{% extends "candidates/base.html" %}
+{% block title %}لوحة اللجنة{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-head">
+    <div class="hgroup">
+      <h1 class="h1">لوحة اللجنة</h1>
+      <p class="sub">اللجنة: <b>{{ committee.name }}</b></p>
+    </div>
+
+    <div class="chips">
+      {% if is_chair %}
+        <span class="chip chip-glow">صلاحية: رئيس لجنة</span>
+      {% else %}
+        <span class="chip">صلاحية: عضو</span>
+      {% endif %}
+      <span class="chip">المرشحون: {{ candidates|length }}</span>
+      {% if q %}
+        <span class="chip chip-ok">بحث: {{ q }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {# مهام رئيس اللجنة #}
+  {% if is_chair and tasks %}
+    <div class="kpis" style="margin-top:12px;">
+      <div class="kpi">
+        <div class="kpi-label">ملفات تحتاج تقييم</div>
+        <div class="kpi-val">{{ tasks.pending_file }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">مقابلات لم أقيّمها</div>
+        <div class="kpi-val">{{ tasks.pending_interview }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">غير معتمدين</div>
+        <div class="kpi-val">{{ tasks.pending_finalize }}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">إرشاد سريع</div>
+        <div class="kpi-val" style="font-size:12px;line-height:1.4;">
+          أكمل الملف ← ثم المقابلة ← ثم الاعتماد
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {# بحث بدون JS #}
+  <form method="get" class="filterbar">
+    <div class="filterbar-row">
+      <div class="field" style="margin:0;flex:1;min-width:240px;">
+        <label class="label" style="margin-bottom:6px;">بحث</label>
+        <input class="input" name="q" value="{{ q|default:'' }}" placeholder="ابحث بالاسم...">
+      </div>
+
+      <div class="filterbar-actions">
+        <button class="btn btn-primary" type="submit">بحث</button>
+        {% if q %}
+          <a class="btn btn-ghost" href="{% url 'candidates:committee_dashboard' %}">مسح</a>
+        {% endif %}
+      </div>
+    </div>
+  </form>
+
+  <div class="panel" style="margin-top:12px;">
+    <div class="panel-head">
+      <div class="panel-title">قائمة المرشحين</div>
+      <div class="panel-sub">
+        سجّل درجتك لكل مرشح. {% if is_chair %}رئيس اللجنة يعتمد النتيجة النهائية.{% else %}الاعتماد النهائي لدى رئيس اللجنة.{% endif %}
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>الاسم</th>
+            <th style="width:120px;">الملف</th>
+            <th style="width:130px;">حالتي</th>
+            <th style="width:240px;">إجراء</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in candidates %}
+            <tr>
+              <td class="td-strong">
+                {{ c.full_name }}
+                {% if c.is_finalized %}
+                  <span class="badge badge-ok" style="margin-right:8px;">مُعتمد</span>
+                {% endif %}
+              </td>
+
+              <td>
+                {% if c.file_score or c.file_not_eligible %}
+                  <span class="badge badge-ok">مكتمل</span>
+                {% else %}
+                  <span class="badge badge-warn">ناقص</span>
+                {% endif %}
+              </td>
+
+              <td>
+                {% if c.id in scored_ids %}
+                  <span class="badge badge-ok">تم التقييم</span>
+                {% else %}
+                  <span class="badge badge-warn">لم أقيم</span>
+                {% endif %}
+              </td>
+
+              <td class="row-actions">
+                {# تقييم الملف موحّد: مشرف/رئيس لجنة #}
+                <a class="btn btn-sm btn-ghost" href="{% url 'candidates:file_score' c.pk %}">تقييم الملف</a>
+
+                {# تقييم المقابلة #}
+                <a class="btn btn-sm btn-primary" href="{% url 'candidates:committee_score' c.pk %}">تقييم</a>
+
+                {% if is_chair %}
+                  <a class="btn btn-sm btn-ghost" href="{% url 'candidates:chair_finalize' c.pk %}">اعتماد</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="4" class="td-empty">لا يوجد مرشحون لدى هذه اللجنة.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if is_chair %}
+      <div class="note" style="margin-top:10px;">
+        <div class="note-title">تنبيه</div>
+        <div class="note-text">
+          يفضّل إكمال “تقييم الملف” للمرشحين غير المكتملين قبل اعتماد النتائج النهائية.
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -6,39 +6,27 @@ from . import views
 app_name = "candidates"
 
 urlpatterns = [
-    # =========================
     # Home
-    # =========================
-    path("", views.dashboard, name="dashboard"),
+    path("", views.home, name="home"),
 
-    # =========================
-    # File Reviewer
-    # =========================
-    path("file-review/", views.file_review_list, name="file_review_list"),
-    path("file-review/<int:pk>/", views.file_review_detail, name="file_review_detail"),
+    # Auth
+    path("login/", views.login_view, name="login"),
+    path("logout/", views.logout_view, name="logout"),
 
-    # =========================
-    # Interviewer
-    # =========================
-    path("interview/", views.interview_list, name="interview_list"),
-    path(
-        "interview/<int:candidate_id>/committee/<int:committee_id>/",
-        views.interview_score,
-        name="interview_score",
-    ),
+    # File scoring (Unified) — Supervisor + Chair
+    path("file/<int:pk>/", views.file_score_view, name="file_score"),
 
-    # =========================
-    # Admin Panel
-    # =========================
-    path("admin-panel/", views.admin_panel, name="admin_panel"),
+    # Supervisor
+    path("supervisor/", views.supervisor_dashboard, name="supervisor_dashboard"),
 
-    # ✅ اعتماد تلقائي (يختار لجنة المرشح المناسبة تلقائيًا)
-    path("finalize/<int:pk>/", views.finalize_candidate_auto, name="finalize_candidate_auto"),
+    # Admin
+    path("dashboard/", views.admin_dashboard, name="admin_dashboard"),
+    path("distribution/", views.distribution_view, name="distribution"),
 
-    # (اختياري) اعتماد يدوي لو احتجته لاحقًا
-    path(
-        "finalize/<int:pk>/committee/<int:committee_id>/",
-        views.finalize_candidate,
-        name="finalize_candidate",
-    ),
+    # Committee
+    path("committee/", views.committee_dashboard, name="committee_dashboard"),
+    path("committee/candidate/<int:pk>/", views.committee_score, name="committee_score"),
+
+    # Chair finalize
+    path("committee/final/<int:pk>/", views.chair_finalize, name="chair_finalize"),
 ]
